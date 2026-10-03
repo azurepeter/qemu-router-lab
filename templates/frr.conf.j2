@@ -1,0 +1,94 @@
+frr defaults traditional
+hostname {{ inventory_hostname }}
+service integrated-vtysh-config
+!
+{% set internal = links | selectattr('peer_asn', 'equalto', asn) | list %}
+{% set external = links | rejectattr('peer_asn', 'equalto', asn) | list %}
+{% if bfd | bool and internal %}
+bfd
+ profile fast
+  receive-interval 100
+  transmit-interval 100
+  detect-multiplier 3
+ exit
+exit
+!
+{% endif %}
+interface lo
+ ip address {{ loopback }}/32
+{% if internal %}
+ ip ospf area 0
+{% endif %}
+exit
+!
+{% for link in internal %}
+interface {{ link.name }}
+ ip ospf area 0
+ ip ospf network point-to-point
+{% if bfd | bool %}
+ ip ospf bfd
+ ip ospf bfd profile fast
+{% endif %}
+exit
+!
+{% endfor %}
+{% if internal %}
+router ospf
+ ospf router-id {{ loopback }}
+ passive-interface lo
+{% if external %}
+ default-information originate
+{% endif %}
+exit
+!
+{% endif %}
+{% if external %}
+{% if internal %}
+{# The border router announces our space as two aggregates, held up by
+   routes to Null0 so the announcement does not depend on any one prefix. #}
+ip route 10.255.0.0/24 Null0
+ip route 10.0.0.0/16 Null0
+ip prefix-list OURS seq 10 permit 10.255.0.0/24
+ip prefix-list OURS seq 20 permit 10.0.0.0/16
+ip prefix-list FROM-UPSTREAM seq 10 permit 0.0.0.0/0
+ip prefix-list FROM-UPSTREAM seq 20 permit 198.51.100.0/24 le 32
+!
+route-map UPSTREAM-IN permit 10
+ match ip address prefix-list FROM-UPSTREAM
+exit
+!
+route-map UPSTREAM-OUT permit 10
+ match ip address prefix-list OURS
+exit
+!
+{% else %}
+route-map ANY permit 10
+exit
+!
+{% endif %}
+router bgp {{ asn }}
+ bgp router-id {{ loopback }}
+{% for link in external %}
+ neighbor {{ link.peer_ip }} remote-as {{ link.peer_asn }}
+{% endfor %}
+ !
+ address-family ipv4 unicast
+{% if internal %}
+  network 10.255.0.0/24
+  network 10.0.0.0/16
+{% for link in external %}
+  neighbor {{ link.peer_ip }} route-map UPSTREAM-IN in
+  neighbor {{ link.peer_ip }} route-map UPSTREAM-OUT out
+{% endfor %}
+{% else %}
+  network {{ loopback }}/32
+{% for link in external %}
+  neighbor {{ link.peer_ip }} default-originate
+  neighbor {{ link.peer_ip }} route-map ANY in
+  neighbor {{ link.peer_ip }} route-map ANY out
+{% endfor %}
+{% endif %}
+ exit-address-family
+exit
+!
+{% endif %}

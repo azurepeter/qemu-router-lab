@@ -1,0 +1,15 @@
+# The whole lab, in one place: lab.py wires QEMU from it and writes the
+# Ansible inventory from it, so the cabling and the config cannot disagree.
+base_image: router-base.qcow2
+
+nodes:
+  r1:  { asn: 64510, loopback: 10.255.0.1 }
+  r2:  { asn: 64510, loopback: 10.255.0.2 }
+  r3:  { asn: 64510, loopback: 10.255.0.3 }
+  isp: { asn: 64500, loopback: 198.51.100.1 }
+
+links:
+  - [r1, r2, 10.0.12.0/30]
+  - [r1, r3, 10.0.13.0/30]
+  - [r2, r3, 10.0.23.0/30]
+  - [r3, isp, 203.0.113.0/30]

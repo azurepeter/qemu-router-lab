@@ -1,0 +1,47 @@
+---
+- name: Configure the lab routers
+  hosts: routers
+  become: true
+  gather_facts: false
+  vars:
+    bfd: false
+  tasks:
+    - name: Wait for cloud-init to finish first-boot configuration
+      ansible.builtin.command: cloud-init status --wait
+      changed_when: false
+
+    - name: Keep the hostname Ansible sets
+      ansible.builtin.copy:
+        content: "preserve_hostname: true\n"
+        dest: /etc/cloud/cloud.cfg.d/99-lab.cfg
+        mode: "0644"
+
+    - name: Set the hostname
+      ansible.builtin.hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Name and address the link interfaces
+      ansible.builtin.template:
+        src: netplan.yaml.j2
+        dest: /etc/netplan/60-lab.yaml
+        mode: "0600"
+      register: netplan
+
+    - name: Reboot so the interfaces come up under their new names
+      ansible.builtin.reboot:
+      when: netplan.changed
+
+    - name: Configure FRR
+      ansible.builtin.template:
+        src: frr.conf.j2
+        dest: /etc/frr/frr.conf
+        owner: frr
+        group: frr
+        mode: "0640"
+      notify: Restart FRR
+
+  handlers:
+    - name: Restart FRR
+      ansible.builtin.service:
+        name: frr
+        state: restarted

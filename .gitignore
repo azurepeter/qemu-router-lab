@@ -1,0 +1,10 @@
+# Generated locally; the key in particular must never be committed.
+admin_key
+admin_key.pub
+build/
+run/
+inventory/
+*.qcow2
+*.iso
+ping.txt
+.venv/
