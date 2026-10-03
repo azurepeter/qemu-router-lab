@@ -142,7 +142,8 @@ def inventory():
     os.makedirs(os.path.join(HERE, "inventory"), exist_ok=True)
     with open(os.path.join(HERE, "inventory", "hosts.yml"), "w") as f:
         yaml.safe_dump({"all": {"children": {"routers": {
-            "vars": {"ansible_host": "127.0.0.1", "ansible_user": "admin"},
+            "vars": {"ansible_host": "127.0.0.1", "ansible_user": "admin",
+                     "ansible_python_interpreter": "/usr/bin/python3"},
             "hosts": hosts,
         }}}}, f, sort_keys=False)
 
