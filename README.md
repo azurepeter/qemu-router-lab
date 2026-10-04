@@ -57,7 +57,26 @@ To look around: `ssh -i admin_key -p 2201 admin@127.0.0.1`, then `sudo vtysh`.
 
 A link that is down at one end is routed around quickly: the router that noticed floods an update over its other links, and OSPF only uses a link both routers describe. A silent failure is invisible until the OSPF dead interval (40 seconds) expires — unless BFD is running.
 
+## Two tenants on one router: VRF experiments
+
+[`vrf-experiments.sh`](vrf-experiments.sh) turns `r3` into a router for two tenants, `red` and `blue`, sharing the upstream. Each tenant is a Linux VRF with a host behind it (a network namespace on a veth pair), addressed inside the `10.0.0.0/16` aggregate that `r3` already announces. Everything is applied at runtime and removed afterwards. Run it after `ansible-playbook site.yml`.
+
+Each probe is five pings from a tenant host to the upstream's loopback, with the upstream's own counters showing whether the requests arrived. Measured on FRR 8.1 and kernel 5.15, the same in every clean run:
+
+| Step | Result | What the upstream saw |
+|---|---|---|
+| Two tenants, same addresses, nothing leaked, **no unreachable default in the VRF table** | 100% loss | all 5 requests: traffic fell through to the main table and left |
+| The same with `unreachable default metric 4278198272` in each VRF | 100% loss, `r3` answers "unreachable" | nothing |
+| Upstream routes leaked into `red`, nothing leaked back | 100% loss | all 5 requests; replies died at `r3`'s Null0 route for the aggregate |
+| `red` leaked back into the default VRF too | 0% loss | 5 requests |
+| `blue` added with the **same** prefix, leaked both ways | `blue` 0%, `red` 100% | both tenants' requests; the default VRF can return only one of them |
+| `blue` renumbered to `10.0.60.0/24` | both 0% | 5 requests each |
+| `red` host pings `blue` host | 0% loss | 10 transit packets: the tenants reach each other through the upstream |
+
 ## Things this lab taught me about itself
+
+- **Deleting a VRF does not empty its routing table.** Routes with no device, such as the unreachable default, stay behind and appear in the next VRF given the same table number. `vrf-experiments.sh` flushes the table when it removes a tenant.
+- **Recreating a VRF under a running FRR left BGP out of step** with the kernel: its leaked routes were not reinstalled. The script renumbers a tenant in place instead.
 
 - **Clones shared a `machine-id`.** The base image now empties it, so each clone generates its own on first boot.
 - **The management DHCP default route beat the OSPF default.** Management interfaces now use `dhcp4-overrides: use-routes: false`.
