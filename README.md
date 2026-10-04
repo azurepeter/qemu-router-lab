@@ -73,6 +73,21 @@ Each probe is five pings from a tenant host to the upstream's loopback, with the
 | `blue` renumbered to `10.0.60.0/24` | both 0% | 5 requests each |
 | `red` host pings `blue` host | 0% loss | 10 transit packets: the tenants reach each other through the upstream |
 
+### Making overlapping tenants work with NAT
+
+[`vrf-nat-experiments.sh`](vrf-nat-experiments.sh) puts both tenants on `10.0.50.0/24`, leaks the upstream's routes in and nothing back, then adds NAT one piece at a time with iptables. Five pings per tenant (ten each, sent together, in the last two steps):
+
+| Step | red | blue |
+|---|---|---|
+| No NAT | 100% loss | 100% loss |
+| One SNAT rule for the shared range | 100% loss | 100% loss |
+| A pool per tenant (`10.0.151.1`, `10.0.152.1`), chosen by ingress interface | 100% loss | 100% loss |
+| …and replies routed by the connection's mark (`CONNMARK --restore-mark` + `ip rule fwmark`) | 0% loss | 0% loss |
+| Both at once with the same ICMP identifier | 11, 14, 6, 14 replies to 10 sent | 9, 6, 14, 6 |
+| …with `CT --zone-orig` per tenant | 10 every run | 10 every run |
+
+Replies are routed after NAT has turned them back into the tenant's private address, so the address alone cannot say which tenant they belong to. And with identical tuples before NAT, the two tenants' flows were not kept apart until each was given its own conntrack zone. Without zones, one tenant received the other's replies in every run.
+
 ## Things this lab taught me about itself
 
 - **Deleting a VRF does not empty its routing table.** Routes with no device, such as the unreachable default, stay behind and appear in the next VRF given the same table number. `vrf-experiments.sh` flushes the table when it removes a tenant.
